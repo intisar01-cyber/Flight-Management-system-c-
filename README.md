@@ -1,6 +1,3 @@
-Below is a **professional, university-level README.md** you can directly paste into your GitHub repository for this project.
-
----
 
 # Flight Management System (C++ – Data Structures)
 
