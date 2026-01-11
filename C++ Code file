@@ -1,0 +1,631 @@
+// flight_management.cpp
+// Flight Management System- Console Application
+// Implements: BST (Flights), Hash Table (Passengers), Queue (Booking Requests),
+// Linked List (Confirmed Bookings), Stack (Cancellation History)
+// Compile: g++-std=c++11 flight_management.cpp-o flight_mgmt
+#include <iostream>
+#include <string>
+#include <vector>
+#include <limits>
+using namespace std;
+/*------------------------------
+Utility functions--------------------------------*/
+void clearInput() {
+cin.clear();
+cin.ignore(numeric_limits<streamsize>::max(), '\n');
+}
+int getInt(const string& prompt) {
+int x;
+while (true) {
+cout << prompt;
+if (cin >> x) {
+clearInput();
+return x;
+}
+else {
+cout << "Invalid input, try again.\n";
+clearInput();
+}
+}
+}
+string getLineNonEmpty(const string& prompt) {
+string s;
+while (true) {
+cout << prompt;
+getline(cin, s);
+if (!s.empty()) return s;
+cout << "Input cannot be empty.\n";
+}
+}
+/*------------------------------
+Flight BST (by flightID)--------------------------------*/
+struct Flight {
+int flightID;
+string source;
+string destination;
+string departure; // keep simple format e.g., "2025-12-20 14:30"
+int totalSeats;
+int seatsAvailable;
+};
+struct FlightNode {
+Flight data;
+FlightNode* left, * right;
+FlightNode(const Flight& f) : data(f), left(nullptr), right(nullptr) {}
+};
+class FlightBST {
+private:
+FlightNode* root;
+FlightNode* insertNode(FlightNode* node, const Flight& f) {
+if (!node) return new FlightNode(f);
+if (f.flightID < node->data.flightID)
+node->left = insertNode(node->left, f);
+else if (f.flightID > node->data.flightID)
+node->right = insertNode(node->right, f);
+else
+cout << "Flight ID " << f.flightID << " already exists. Skipping insert.\n";
+return node;
+}
+void inorderDisplay(FlightNode* node) {
+if (!node) return;
+inorderDisplay(node->left);
+cout << "FlightID: " << node->data.flightID
+<< " |" <<node->data.source << "-> " << node->data.destination
+<< " |Departs: " << node->data.departure
+<< " |Seats: " << node->data.seatsAvailable << "/" << node->data.totalSeats << "\n";
+inorderDisplay(node->right);
+}
+FlightNode* searchByIDNode(FlightNode* node, int id) {
+if (!node) return nullptr;
+if (id == node->data.flightID) return node;
+if (id < node->data.flightID) return searchByIDNode(node->left, id);
+return searchByIDNode(node->right, id);
+}
+void collectIDs(FlightNode* node, vector<int>& ids) {
+if (!node) return;
+collectIDs(node->left, ids);
+ids.push_back(node->data.flightID);
+collectIDs(node->right, ids);
+}
+void collectByDestination(FlightNode* node, const string& dest, vector<Flight>& out) {
+if (!node) return;
+collectByDestination(node->left, dest, out);
+if (node->data.destination == dest) out.push_back(node->data);
+collectByDestination(node->right, dest, out);
+}
+void deleteTree(FlightNode* node) {
+if (!node) return;
+deleteTree(node->left);
+deleteTree(node->right);
+delete node;
+}
+public:
+FlightBST() : root(nullptr) {}
+~FlightBST() { deleteTree(root); }
+void insertFlight(const Flight& f) {
+root = insertNode(root, f);
+}
+void displayAllFlights() {
+if (!root) {
+cout << "No flights in system.\n";
+return;
+}
+cout << "All flights (in-order by FlightID):\n";
+inorderDisplay(root);
+}
+Flight* searchByID(int id) {
+FlightNode* n = searchByIDNode(root, id);
+return n ? &n->data : nullptr;
+}
+vector<int> getSortedFlightIDs() {
+vector<int> ids;
+collectIDs(root, ids);
+return ids;
+}
+vector<Flight> searchByDestination(const string& dest) {
+vector<Flight> res;
+collectByDestination(root, dest, res);
+return res;
+}
+};
+/*------------------------------
+Passenger Hash Table (chaining)--------------------------------*/
+struct Passenger {
+int passengerID;
+string name;
+string cnic_or_passport;
+string contact;
+};
+struct PassengerNode {
+Passenger data;
+PassengerNode* next;
+PassengerNode(const Passenger& p) : data(p), next(nullptr) {}
+};
+class PassengerHash {
+private:
+static const int TABLE_SIZE = 101; // prime for better spread
+PassengerNode* table[TABLE_SIZE];
+int hashFunc(int key) {
+return key % TABLE_SIZE;
+}
+public:
+PassengerHash() {
+for (int i = 0; i < TABLE_SIZE; ++i) table[i] = nullptr;
+}
+~PassengerHash() {
+for (int i = 0; i < TABLE_SIZE; ++i) {
+PassengerNode* cur = table[i];
+while (cur) {
+PassengerNode* tmp = cur;
+cur = cur->next;
+delete tmp;
+}
+}
+}
+void insertPassenger(const Passenger& p) {
+int idx = hashFunc(p.passengerID);
+// Prevent duplicate passengerID
+PassengerNode* cur = table[idx];
+while (cur) {
+if (cur->data.passengerID == p.passengerID) {
+cout << "Passenger ID " << p.passengerID << " already exists. Skipping insert.\n";
+return;
+}
+cur = cur->next;
+}
+PassengerNode* node = new PassengerNode(p);
+node->next = table[idx];
+table[idx] = node;
+cout << "Passenger inserted with ID " << p.passengerID << ".\n";
+}
+Passenger* searchByID(int pid) {
+int idx = hashFunc(pid);
+PassengerNode* cur = table[idx];
+while (cur) {
+if (cur->data.passengerID == pid) return &cur->data;
+cur = cur->next;
+}
+return nullptr;
+}
+bool removeByID(int pid) {
+int idx = hashFunc(pid);
+PassengerNode* cur = table[idx];
+PassengerNode* prev = nullptr;
+while (cur) {
+if (cur->data.passengerID == pid) {
+if (prev) prev->next = cur->next;
+else table[idx] = cur->next;
+delete cur;
+return true;
+}
+prev = cur;
+cur = cur->next;
+}
+return false;
+}
+void displayAllPassengers() {
+cout << "Passengers list:\n";
+bool any = false;
+for (int i = 0; i < TABLE_SIZE; ++i) {
+PassengerNode* cur = table[i];
+while (cur) {
+any = true;
+cout << "ID: " << cur->data.passengerID
+<< " |Name: "<< cur->data.name
+<< " |CNIC/Passport: " << cur->data.cnic_or_passport
+<< " |Contact: " << cur->data.contact << "\n";
+cur = cur->next;
+}
+}
+if (!any) cout << "No passengers.\n";
+}
+// Linear search by name (demonstrates linear search on unsorted data)
+vector<Passenger> searchByName(const string& name) {
+vector<Passenger> res;
+for (int i = 0; i < TABLE_SIZE; ++i) {
+PassengerNode* cur = table[i];
+while (cur) {
+if (cur->data.name == name) res.push_back(cur->data);
+cur = cur->next;
+}
+}
+return res;
+}
+};
+/*------------------------------
+Booking Queue (requests)--------------------------------*/
+struct BookingRequest {
+int passengerID;
+int flightID;
+BookingRequest(int pid = 0, int fid = 0) : passengerID(pid), flightID(fid) {}
+};
+struct QNode {
+BookingRequest req;
+QNode* next;
+QNode(const BookingRequest& r) : req(r), next(nullptr) {}
+};
+class BookingQueue {
+private:
+QNode* front, * rear;
+public:
+BookingQueue() : front(nullptr), rear(nullptr) {}
+~BookingQueue() {
+while (front) {
+QNode* t =front; front = front->next; delete t;
+}
+}
+void enqueue(const BookingRequest& r) {
+QNode* node=newQNode(r);
+if (!rear) front = rear = node;
+else { rear->next = node; rear = node; }
+cout << "Booking request enqueued (Passenger " << r.passengerID << ", Flight " << r.flightID <<
+").\n";
+}
+bool isEmpty() { return front == nullptr; }
+BookingRequest dequeue() {
+if (!front) return BookingRequest(-1,-1);
+QNode* t =front;
+BookingRequest r = t->req;
+front = front->next;
+if (!front) rear = nullptr;
+delete t;
+return r;
+}
+};
+/*------------------------------
+Confirmed Bookings (linked list)--------------------------------*/
+struct Booking {
+int bookingID;
+int passengerID;
+int flightID;
+string status; // "CONFIRMED" or "CANCELLED"
+};
+struct BookingNode {
+Booking data;
+BookingNode* next;
+BookingNode(const Booking& b) : data(b), next(nullptr) {}
+};
+class BookingList {
+private:
+BookingNode* head;
+public:
+BookingList() : head(nullptr) {}
+~BookingList() {
+BookingNode* cur = head;
+while (cur) { BookingNode* tmp = cur; cur = cur->next; delete tmp; }
+}
+void addBooking(const Booking& b) {
+BookingNode* node = new BookingNode(b);
+node->next = head;
+head = node;
+cout << "Booking confirmed: ID " << b.bookingID << " (P:" << b.passengerID << ", F:" << b.flightID
+<< ")\n";
+}
+BookingNode* findByBookingID(int bid) {
+BookingNode* cur = head;
+while (cur) {
+if (cur->data.bookingID == bid) return cur;
+cur = cur->next;
+}
+return nullptr;
+}
+// Remove booking node (used when cancelling permanently)
+bool removeByBookingID(int bid) {
+BookingNode* cur = head;
+BookingNode* prev = nullptr;
+while (cur) {
+if (cur->data.bookingID == bid) {
+if (prev) prev->next = cur->next;
+else head = cur->next;
+delete cur;
+return true;
+}
+prev = cur;
+cur = cur->next;
+}
+return false;
+}
+void displayAllBookings() {
+BookingNode* cur = head;
+if (!cur) { cout << "No confirmed bookings.\n"; return; }
+cout << "Confirmed Bookings (most recent first):\n";
+while (cur) {
+cout << "BookingID: " << cur->data.bookingID
+<< " |PassengerID: " << cur->data.passengerID
+<< " |FlightID: " << cur->data.flightID
+<< " |Status: " << cur->data.status << "\n";
+cur = cur->next;
+}
+}
+};
+/*------------------------------
+Cancellation Stack (history)--------------------------------*/
+struct StackNode {
+Booking canceled;
+StackNode* next;
+StackNode(const Booking& b) : canceled(b), next(nullptr) {}
+};
+class CancellationStack {
+private:
+StackNode* top;
+public:
+CancellationStack() : top(nullptr) {}
+~CancellationStack() {
+while (top) {
+StackNode* tmp = top; top = top->next; delete tmp;
+}
+}
+void push(const Booking& b) {
+StackNode* n = new StackNode(b);
+n->next = top;
+top = n;
+cout << "Cancellation recorded on stack for BookingID " << b.bookingID << ".\n";
+}
+bool isEmpty() { return top == nullptr; }
+Booking peek() {
+if (top) return top->canceled;
+return Booking{-1,-1,-1, "" };
+}
+Booking pop() {
+if (!top) return Booking{-1,-1,-1, "" };
+StackNode* t = top;
+Booking b = t->canceled;
+top = top->next;
+delete t;
+return b;
+}
+void displayHistory() {
+StackNode* cur = top;
+if (!cur) { cout << "No cancellations recorded.\n"; return; }
+cout << "Cancellation history (most recent first):\n";
+while (cur) {
+cout << "BookingID: " << cur->canceled.bookingID
+<< " |PassengerID: " << cur->canceled.passengerID
+<< " |FlightID: " << cur->canceled.flightID
+<< " |Status: " << cur->canceled.status << "\n";
+cur = cur->next;
+}
+}
+};
+/*------------------------------
+System Controller / Integration--------------------------------*/
+class FlightManagementSystem {
+private:
+FlightBST flights;
+PassengerHash passengers;
+BookingQueue requestQueue;
+BookingList bookings;
+CancellationStack cancellations;
+int nextPassengerID;
+int nextBookingID;
+public:
+FlightManagementSystem() : nextPassengerID(1001), nextBookingID(5001) {}
+//-------- Flight operations--------
+void addFlightInteractive() {
+Flight f;
+f.flightID = getInt("Enter Flight ID (integer): ");
+f.source = getLineNonEmpty("Enter Source: ");
+f.destination = getLineNonEmpty("Enter Destination: ");
+f.departure = getLineNonEmpty("Enter Departure (e.g., 2025-12-20 14:30): ");
+f.totalSeats = getInt("Enter total seats: ");
+f.seatsAvailable = f.totalSeats;
+flights.insertFlight(f);
+cout << "Flight added.\n";
+}
+void displayFlights() { flights.displayAllFlights(); }
+void searchFlightByIDInteractive() {
+int id = getInt("Enter Flight ID to search: ");
+Flight* f = flights.searchByID(id);
+if (!f) cout << "Flight not found.\n";
+else {
+cout << "Found Flight: ID " << f->flightID << " | " << f->source << "-> " << f->destination
+<< " |Departs: " << f->departure << " | Seats: " << f->seatsAvailable << "/" << f->totalSeats
+<< "\n";
+}
+}
+void searchFlightByDestinationInteractive() {
+string dest = getLineNonEmpty("Enter Destination to search: ");
+auto res = flights.searchByDestination(dest);
+if (res.empty()) cout << "No flights to destination " << dest << ".\n";
+else {
+cout << "Flights to " << dest << ":\n";
+for (const Flight& f : res) {
+cout << "FlightID: " << f.flightID << " | " << f.source << "-> " << f.destination
+<< " |Departs: " << f.departure << " | Seats: " << f.seatsAvailable << "/" << f.totalSeats <<
+"\n";
+}
+}
+}
+// Demonstrate binary search on sorted Flight IDs
+void binarySearchFlightIDInteractive() {
+int id = getInt("Enter Flight ID to binary-search (requires sorted IDs): ");
+vector<int> ids = flights.getSortedFlightIDs();
+if (ids.empty()) { cout << "No flights to search.\n"; return; }
+int l = 0, r = (int)ids.size()- 1;
+while (l <= r) {
+int m =l + (r- l) / 2;
+if (ids[m] == id) {
+cout << "FlightID " << id << " found (binary search).\n";
+return;
+}
+else if (ids[m] < id) l = m + 1;
+else r = m- 1;
+}
+cout << "FlightID " << id << " not found (binary search).\n";
+}
+//-------- Passenger operations--------
+void addPassengerInteractive() {
+Passenger p;
+// auto-generated ID to avoid collisions
+p.passengerID = nextPassengerID++;
+p.name = getLineNonEmpty("Enter passenger name: ");
+p.cnic_or_passport = getLineNonEmpty("Enter CNIC/Passport: ");
+p.contact = getLineNonEmpty("Enter contact: ");
+passengers.insertPassenger(p);
+}
+void displayPassengers() { passengers.displayAllPassengers(); }
+void searchPassengerByIDInteractive() {
+int pid = getInt("Enter Passenger ID to search: ");
+Passenger* p = passengers.searchByID(pid);
+if (!p) cout << "Passenger not found.\n";
+else {
+cout << "Passenger found: ID " << p->passengerID << " | Name: " << p->name
+<< " |CNIC/Passport: " << p->cnic_or_passport << " | Contact: " << p->contact << "\n";
+}
+}
+void searchPassengerByNameInteractive() {
+string name = getLineNonEmpty("Enter name to search (exact match): ");
+auto list = passengers.searchByName(name);
+if (list.empty()) cout << "No passengers found with name " << name << ".\n";
+else {
+cout << list.size() << " passenger(s) found:\n";
+for (auto& p : list) {
+cout << "ID: " << p.passengerID << " | Name: " << p.name << " | Contact: " << p.contact <<
+"\n";
+}
+}
+}
+//-------- Booking operations--------
+void enqueueBookingRequestInteractive() {
+int pid = getInt("Enter Passenger ID (existing): ");
+if (!passengers.searchByID(pid)) {
+cout << "Passenger ID not found. Add passenger first.\n";
+return;
+}
+int fid = getInt("Enter Flight ID to book: ");
+if (!flights.searchByID(fid)) {
+cout << "Flight ID not found.\n";
+return;
+}
+BookingRequest r(pid, fid);
+requestQueue.enqueue(r);
+}
+// Process next booking request (FCFS)
+void processNextBooking() {
+if (requestQueue.isEmpty()) {
+cout << "No booking requests in queue.\n";
+return;
+}
+BookingRequest r = requestQueue.dequeue();
+Flight* f = flights.searchByID(r.flightID);
+Passenger* p = passengers.searchByID(r.passengerID);
+if (!f) {
+cout << "Flight " << r.flightID << " no longer exists. Rejecting booking request.\n";
+return;
+}
+if (!p) {
+cout << "Passenger " << r.passengerID << " not found. Rejecting booking request.\n";
+return;
+}
+if (f->seatsAvailable <= 0) {
+cout << "No seats available on flight " << r.flightID << ". Booking failed.\n";
+return;
+}
+// Create booking
+Booking b;
+b.bookingID = nextBookingID++;
+b.passengerID = r.passengerID;
+b.flightID = r.flightID;
+b.status = "CONFIRMED";
+bookings.addBooking(b);
+// Deduct seat
+f->seatsAvailable-= 1;
+}
+void processAllBookingRequests() {
+while (!requestQueue.isEmpty()) processNextBooking();
+cout << "All pending booking requests processed.\n";
+}
+void displayBookings() { bookings.displayAllBookings(); }
+// Cancel booking by booking ID
+void cancelBookingInteractive() {
+int bid = getInt("Enter Booking ID to cancel: ");
+BookingNode* bn = bookings.findByBookingID(bid);
+if (!bn) {
+cout << "Booking ID not found.\n";
+return;
+}
+if (bn->data.status == "CANCELLED") {
+cout << "Booking already cancelled.\n";
+return;
+}
+// Mark as cancelled
+Booking cancelled = bn->data;
+cancelled.status = "CANCELLED";
+// Update the node status (we keep node but mark status)
+bn->data.status = "CANCELLED";
+// Return seat to flight
+Flight* f = flights.searchByID(bn->data.flightID);
+if (f) f->seatsAvailable += 1;
+// Record cancellation on stack
+cancellations.push(cancelled);
+cout << "Booking " << bid << " cancelled and seat restored.\n";
+}
+void displayCancellations() { cancellations.displayHistory(); }
+// Optionally permanently remove a booking record (not required by proposal,
+// but useful if teacher asks for delete)
+void removeBookingPermanentlyInteractive() {
+int bid = getInt("Enter Booking ID to remove permanently: ");
+bool ok = bookings.removeByBookingID(bid);
+if (ok) cout << "Booking removed permanently.\n";
+else cout << "Booking ID not found.\n";
+}
+//-------- Demo / helper data--------
+void seedSampleData() {
+// Add sample flights
+Flight f1{ 101, "Islamabad", "Karachi", "2025-12-20 08:00", 120, 120 };
+Flight f2{ 205, "Lahore", "Dubai", "2025-12-21 22:30", 200, 200 };
+Flight f3{ 150, "Islamabad", "Lahore", "2025-12-19 13:00", 150, 150 };
+flights.insertFlight(f1); flights.insertFlight(f2); flights.insertFlight(f3);
+// Add sample passengers
+Passenger p1{ nextPassengerID++, "Ali Khan", "35202-1234567-1", "03001234567" };
+Passenger p2{ nextPassengerID++, "Sara Ahmed", "42101-7654321-6", "03331234567" };
+passengers.insertPassenger(p1); passengers.insertPassenger(p2);
+cout << "Sample data seeded (3 flights, 2 passengers).\n";
+}
+// Main menu loop
+void run() {
+cout << "=== Flight Management System (C++- Data Structures) ===\n";
+cout << "Note: System uses BST for flights, Hashing for passengers, Queue for bookings, Stack for
+cancellations.\n";
+bool running = true;
+while (running) {
+cout << "\n--- Main Menu---\n";
+cout << "1. Add Flight\n2. Display Flights\n3. Search Flight by ID\n4. Search Flight by
+Destination\n5. Binary Search Flight ID (on sorted IDs)\n";
+cout << "6. Add Passenger\n7. Display Passengers\n8. Search Passenger by ID\n9. Search
+Passenger by Name (linear search)\n";
+cout << "10. Enqueue Booking Request\n11. Process Next Booking Request (FCFS)\n12. Process
+All Booking Requests\n13. Display Confirmed Bookings\n14. Cancel Booking\n15. Display Cancellation
+History\n";
+cout << "16. Remove Booking Permanently\n17. Seed Sample Data\n0. Exit\n";
+int choice = getInt("Select option: ");
+switch (choice) {
+case 1: addFlightInteractive(); break;
+case 2: displayFlights(); break;
+case 3: searchFlightByIDInteractive(); break;
+case 4: searchFlightByDestinationInteractive(); break;
+case 5: binarySearchFlightIDInteractive(); break;
+case 6: addPassengerInteractive(); break;
+case 7: displayPassengers(); break;
+case 8: searchPassengerByIDInteractive(); break;
+case 9: searchPassengerByNameInteractive(); break;
+case 10: enqueueBookingRequestInteractive(); break;
+case 11: processNextBooking(); break;
+case 12: processAllBookingRequests(); break;
+case 13: displayBookings(); break;
+case 14: cancelBookingInteractive(); break;
+case 15: displayCancellations(); break;
+case 16: removeBookingPermanentlyInteractive(); break;
+case 17: seedSampleData(); break;
+case 0: running = false; cout << "Exiting...\n"; break;
+default: cout << "Invalid option.\n"; break;
+}
+}
+}
+};
+/*------------------------------
+Main--------------------------------*/
+int main() {
+FlightManagementSystem sys;
+sys.run();
+return 0;
+}
